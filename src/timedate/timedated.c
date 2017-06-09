@@ -52,6 +52,7 @@ typedef struct Context {
         bool local_rtc;
         bool can_ntp;
         bool use_ntp;
+        bool static_timezone;
         Hashmap *polkit_registry;
 } Context;
 
@@ -365,8 +366,9 @@ static int method_set_timezone(sd_bus_message *m, void *userdata, sd_bus_error *
         if (r < 0)
                 return r;
 
-        return sd_bus_error_setf(error, SD_BUS_ERROR_NOT_SUPPORTED,
-            "Changing system settings via systemd is not supported on NixOS.");
+        if (c->static_timezone)
+                return sd_bus_error_setf(error, SD_BUS_ERROR_NOT_SUPPORTED,
+                    "Changing timezone via systemd is not supported when it is set in NixOS configuration.");
 
         if (!timezone_is_valid(z))
                 return sd_bus_error_setf(error, SD_BUS_ERROR_INVALID_ARGS, "Invalid time zone '%s'", z);
@@ -711,10 +713,15 @@ int main(int argc, char *argv[]) {
 
         umask(0022);
 
-        if (argc != 1) {
-                log_error("This program takes no arguments.");
-                r = -EINVAL;
-                goto finish;
+        while (++argv, --argc) {
+                if (strcmp(*argv, "--static-timezone") == 0) {
+                        context.static_timezone = true;
+                }
+                else {
+                        log_error("Unknown argument: %s", *argv);
+                        r = -EINVAL;
+                        goto finish;
+                }
         }
 
         r = sd_event_default(&event);
